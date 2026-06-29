@@ -1,0 +1,2031 @@
+openapi: 3.1.0
+info:
+  title: Finboard API
+  version: 1.0.0
+  description: |
+    Finboard KYC, banking, and investment platform API.
+
+    **Base URL:** http://localhost:4000 (API Gateway)
+
+    **Authorize protected routes:** Click Authorize, enter `Bearer <token>` from signin or verify-otp.
+
+    ---
+
+    ## Local dev OTP
+
+    A **random 6-digit OTP** is generated each time. In local dev, check the auth-service console log (`[DEV] Phone OTP for ...`). OTP is **never** returned in API responses.
+
+    Run `pnpm seed:admin` before testing seeded accounts.
+
+    ---
+
+    ## Flow A — New user registration (test in order)
+
+    | Step | Endpoint | Body highlights |
+    |------|----------|-----------------|
+    | 1 | POST /api/auth/signup | name, email, phone, password — **no OTP** |
+    | 2 | POST /api/auth/verify-otp | same phone + otp `123456` → **JWT** |
+    | — | POST /api/auth/send-otp | optional — resend OTP if expired |
+
+    Use a **new** email/phone each signup test (e.g. newuser@finboard.local, +919900007777).
+
+    ---
+
+    ## Flow B — Email login (seeded or verified user)
+
+    | Step | Endpoint | Values |
+    |------|----------|--------|
+    | 1 | POST /api/auth/signin | user@finboard.local / User@12345 |
+
+    ---
+
+    ## Flow C — Phone login
+
+    | Step | Endpoint | Values |
+    |------|----------|--------|
+    | 1 | POST /api/auth/send-otp | phone +919876543210 |
+    | 2 | POST /api/auth/phone-login | phone + otp `123456` |
+
+    ---
+
+    ## Flow D — Admin login
+
+    | Step | Endpoint | Values |
+    |------|----------|--------|
+    | 1 | POST /api/auth/admin/signin | admin@finboard.local / Admin@12345 / adminRole admin |
+
+    ---
+
+    ## Flow E — Protected routes (after JWT)
+
+    | Step | Endpoint | Notes |
+    |------|----------|-------|
+    | 1 | GET /api/auth/me | Bearer token required |
+    | 2 | PATCH /api/auth/change-password | current + new password |
+
+    ---
+
+    ## Flow F — Password reset
+
+    | Step | Endpoint | Values |
+    |------|----------|--------|
+    | 1 | POST /api/auth/forgot-password | user@finboard.local |
+    | 2 | POST /api/auth/reset-password | email + otp `123456` + newPassword |
+
+    ---
+
+    ## Seeded test accounts
+
+    **Customer:** user@finboard.local / User@12345 / +919876543210
+
+    **Admin:** admin@finboard.local / Admin@12345
+
+    **RTA:** rta.admin@finboard.local / RtaAdmin@12345
+
+    Full list: AUTH_CREDENTIALS.md
+
+    ---
+
+    ## Role access matrix (Banking)
+
+    Banking APIs are split into **customer** (`/api/banking/*`) and **admin** (`/api/banking/admin/*`) route groups. Each route enforces JWT role via `requireRole`.
+
+    | Persona | Email | JWT `role` | Customer banking | Banking admin |
+    |---------|-------|------------|------------------|---------------|
+    | Retail investor | user@finboard.local, anurag@finboard.local, etc. | `user` | Yes | No |
+    | KYC Review Admin | admin@finboard.local | `admin` | No | Yes |
+    | Operations Admin | ops.admin@finboard.local | `admin` | No | Yes |
+    | RTA Records Admin | rta.admin@finboard.local | `rta_admin` | No | No |
+    | AMC Manager | amc.admin@finboard.local | `amc_admin` | No | No |
+
+    **Denied roles:** Customer routes return **403** for `admin`, `rta_admin`, and `amc_admin`. Admin routes return **403** for `user`, `rta_admin`, and `amc_admin`.
+  contact:
+    name: Finboard
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:4000
+    description: Local API Gateway
+
+tags:
+  - name: Health
+    description: Gateway health check
+  - name: Auth
+    description: |
+      Authentication — test in this order:
+
+      **Register:** ① signup → ② verify-otp (③ send-otp to resend)
+
+      **Login:** signin · admin/signin · send-otp → phone-login
+
+      **Protected:** me · change-password (Bearer JWT)
+
+      **Reset:** forgot-password → reset-password
+
+      Dev OTP = random 6 digits (auth-service logs only in development)
+  - name: Profile
+    description: Investor profile
+  - name: KYC
+    description: KYC submission and admin review
+  - name: Banking
+    description: |
+      Dummy core banking — account linking, verification (Rs. 2 debit), transfers, beneficiaries, and admin ops.
+
+      **Customer routes** (`/api/banking/*`, except `/admin/*`): JWT role `user` only (retail investors).
+
+      **Admin routes** (`/api/banking/admin/*`): JWT role `admin` only (KYC Review Admin, Operations Admin).
+
+      See **Role access matrix (Banking)** in the API description for persona → role mapping.
+  - name: Investments
+    description: Portfolio, orders, SIP, AMC admin
+  - name: Notifications
+    description: In-app notifications
+  - name: Audit
+    description: |
+      Admin compliance audit trail for resource-scoped events (KYC submit, approve, reject).
+
+      **JWT roles:** `admin`, `rta_admin` only.
+
+      **Frontend:** `/admin/audit` (Audit Explorer) and embedded panel on `/admin/kyc`.
+
+security: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Gateway health check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Gateway is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/auth/signup:
+    post:
+      tags: [Auth]
+      summary: "Flow A — Step 1: Register (details only, OTP sent automatically)"
+      description: |
+        Creates a user with `phoneVerified: false` and sends OTP to the phone.
+
+        **No OTP in the request body.** After this call, use `POST /api/auth/verify-otp`.
+
+        Local dev OTP is random — check auth-service logs (`[DEV] Phone OTP for ...`).
+      operationId: authSignup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+            example:
+              name: Test User
+              email: newuser@finboard.local
+              phone: "+919900007777"
+              password: User@12345
+            examples:
+              newUser:
+                summary: New test user (recommended)
+                value:
+                  name: Test User
+                  email: newuser@finboard.local
+                  phone: "+919900007777"
+                  password: User@12345
+      responses:
+        "201":
+          description: Account created — verify OTP next (no JWT yet)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignupPendingResponse"
+              examples:
+                pending:
+                  summary: OTP sent in dev
+                  value:
+                    message: Account created. OTP sent to your phone for verification.
+                    requiresPhoneVerification: true
+                    registrationComplete: false
+                    user:
+                      id: 6a3f6150dcb58ca317be67e2
+                      name: Test User
+                      email: newuser@finboard.local
+                      phone: "+919900007777"
+                      role: user
+                      phoneVerified: false
+                      emailVerified: false
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Email or phone already registered (or pending verification)
+
+  /api/auth/verify-otp:
+    post:
+      tags: [Auth]
+      summary: "Flow A — Step 2: Verify OTP and complete registration"
+      description: |
+        Call after `POST /api/auth/signup` with the same phone number and the OTP received.
+
+        When a pending registration exists, returns `registrationComplete: true` and a JWT `token`.
+
+        Use the token in Scalar **Authorize** as `Bearer <token>` for protected routes.
+      operationId: authVerifyOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyOtpRequest"
+            example:
+              phone: "+919900007777"
+              otp: "123456"
+            examples:
+              completeRegistration:
+                summary: Complete signup after step 1
+                value:
+                  phone: "+919900007777"
+                  otp: "123456"
+      responses:
+        "200":
+          description: OTP result (JWT included when registration completes)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyOtpResponse"
+              examples:
+                registrationComplete:
+                  summary: Registration finished
+                  value:
+                    message: Registration complete
+                    registrationComplete: true
+                    approved: true
+                    provider: development
+                    status: approved
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    user:
+                      id: 6a3f6150dcb58ca317be67e2
+                      name: Test User
+                      email: newuser@finboard.local
+                      phone: "+919900007777"
+                      role: user
+                      phoneVerified: true
+                      emailVerified: false
+                invalidOtp:
+                  summary: Wrong OTP
+                  value:
+                    message: Invalid or expired OTP
+                    registrationComplete: false
+                    approved: false
+                    provider: development
+                    status: pending
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/auth/send-otp:
+    post:
+      tags: [Auth]
+      summary: "Flow A optional / Flow C — Step 1: Send phone OTP"
+      description: |
+        **Not required for new signup** — OTP is sent automatically by `POST /api/auth/signup`.
+
+        Use to resend OTP if it expired, or before `POST /api/auth/phone-login`.
+
+        Phone must belong to a **registered account** (pending signup or verified user).
+
+        OTP is sent via SMS (Twilio) or logged in development — never returned in the response body.
+      operationId: authSendOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendOtpRequest"
+            example:
+              phone: "+919876543210"
+            examples:
+              resendSignup:
+                summary: Resend OTP after signup
+                value:
+                  phone: "+919900007777"
+              phoneLogin:
+                summary: Flow C — before phone-login (seeded user)
+                value:
+                  phone: "+919876543210"
+      responses:
+        "200":
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendOtpResponse"
+              examples:
+                dev:
+                  value:
+                    message: OTP sent successfully
+                    provider: development
+        "404":
+          description: No account registered with this phone number
+
+  /api/auth/signin:
+    post:
+      tags: [Auth]
+      summary: "Flow B: Sign in with email and password"
+      description: |
+        Requires `phoneVerified: true`. Pending registrations must complete `verify-otp` first.
+      operationId: authSignin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SigninRequest"
+            example:
+              email: user@finboard.local
+              password: User@12345
+            examples:
+              demoUser:
+                summary: Seeded demo user (Rahul)
+                value:
+                  email: user@finboard.local
+                  password: User@12345
+              priya:
+                summary: Seeded demo user (Priya)
+                value:
+                  email: priya@finboard.local
+                  password: User@12345
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              examples:
+                demoUser:
+                  summary: Customer login
+                  value:
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    user:
+                      id: 507f1f77bcf86cd799439011
+                      name: Rahul Sharma
+                      email: user@finboard.local
+                      phone: "+919876543210"
+                      role: user
+                      phoneVerified: true
+                      emailVerified: false
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Phone not verified — complete signup with verify-otp first
+
+  /api/auth/admin/signin:
+    post:
+      tags: [Auth]
+      summary: "Flow D: Admin sign in"
+      description: Validates admin role (`admin`, `rta_admin`, or `amc_admin`). `adminRole` must match the account.
+      operationId: authAdminSignin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSigninRequest"
+            example:
+              email: admin@finboard.local
+              password: Admin@12345
+              adminRole: admin
+            examples:
+              kycAdmin:
+                summary: KYC Review Admin
+                value:
+                  email: admin@finboard.local
+                  password: Admin@12345
+                  adminRole: admin
+              rtaAdmin:
+                summary: RTA Admin
+                value:
+                  email: rta.admin@finboard.local
+                  password: RtaAdmin@12345
+                  adminRole: rta_admin
+      responses:
+        "200":
+          description: Admin login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              examples:
+                kycAdmin:
+                  summary: KYC Review Admin
+                  value:
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    user:
+                      id: 507f1f77bcf86cd799439012
+                      name: KYC Review Admin
+                      email: admin@finboard.local
+                      phone: "+910000000001"
+                      role: admin
+                      phoneVerified: true
+                      emailVerified: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: User is not an admin for the selected role
+
+  /api/auth/phone-login:
+    post:
+      tags: [Auth]
+      summary: "Flow C — Step 2: Sign in with phone OTP"
+      description: |
+        **Flow:** `POST /api/auth/send-otp` → enter OTP here.
+
+        Account must already exist and be phone-verified (seeded users or completed signup).
+      operationId: authPhoneLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyOtpRequest"
+            example:
+              phone: "+919876543210"
+              otp: "123456"
+            examples:
+              rahul:
+                summary: Phone login (after send-otp)
+                value:
+                  phone: "+919876543210"
+                  otp: "123456"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              examples:
+                rahul:
+                  summary: Phone login success
+                  value:
+                    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    user:
+                      id: 507f1f77bcf86cd799439011
+                      name: Rahul Sharma
+                      email: user@finboard.local
+                      phone: "+919876543210"
+                      role: user
+                      phoneVerified: true
+                      emailVerified: false
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Phone not verified — complete signup with verify-otp first
+        "404":
+          description: No account registered with this phone number
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: "Flow E: Get current user (Bearer JWT required)"
+      operationId: authMe
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+              examples:
+                demoUser:
+                  value:
+                    user:
+                      id: 507f1f77bcf86cd799439011
+                      name: Rahul Sharma
+                      email: user@finboard.local
+                      phone: "+919876543210"
+                      role: user
+                      phoneVerified: true
+                      emailVerified: false
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/auth/change-password:
+    patch:
+      tags: [Auth]
+      summary: "Flow E: Change password (Bearer JWT required)"
+      description: Requires JWT from signin or completed registration.
+      operationId: authChangePassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+            examples:
+              change:
+                value:
+                  currentPassword: User@12345
+                  newPassword: NewPass@12345
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Password updated successfully
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: "Flow F — Step 1: Request password reset OTP"
+      description: In local dev, reset OTP is logged to the auth-service console only.
+      operationId: authForgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@finboard.local
+            example:
+              email: user@finboard.local
+            examples:
+              demoUser:
+                value:
+                  email: user@finboard.local
+      responses:
+        "200":
+          description: Reset OTP sent (or logged in dev)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForgotPasswordResponse"
+              examples:
+                dev:
+                  value:
+                    message: If an account exists with that email, a reset code has been sent.
+                    provider: development
+
+  /api/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: "Flow F — Step 2: Reset password with email OTP"
+      description: Call `forgot-password` first on the same email.
+      operationId: authResetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+            example:
+              email: user@finboard.local
+              otp: "123456"
+              newPassword: User@12345
+            examples:
+              reset:
+                value:
+                  email: user@finboard.local
+                  otp: "123456"
+                  newPassword: User@12345
+      responses:
+        "200":
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Password reset successfully
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/profile/me:
+    get:
+      tags: [Profile]
+      summary: Get my profile
+      operationId: getProfile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Profile record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: "#/components/schemas/Profile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Profile]
+      summary: Update my profile
+      operationId: updateProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdateRequest"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: "#/components/schemas/Profile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/kyc/me:
+    get:
+      tags: [KYC]
+      summary: Get my KYC application
+      operationId: getMyKyc
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: KYC application (or null)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application:
+                    $ref: "#/components/schemas/KycApplication"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/kyc/submit:
+    post:
+      tags: [KYC]
+      summary: Submit KYC application
+      description: |
+        Multipart upload with PAN and Aadhaar document images.
+        Name, PAN, and Aadhaar must match a seeded identity (`pnpm seed:kyc`).
+      operationId: submitKyc
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, panNumber, aadhaarNumber, pan, aadhaar]
+              properties:
+                name:
+                  type: string
+                  example: Rahul Sharma
+                panNumber:
+                  type: string
+                  example: ABCPS1234F
+                aadhaarNumber:
+                  type: string
+                  example: "111222333445"
+                pan:
+                  type: string
+                  format: binary
+                aadhaar:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: KYC submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application:
+                    $ref: "#/components/schemas/KycApplication"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/kyc/admin/applications:
+    get:
+      tags: [KYC]
+      summary: List all KYC applications (admin)
+      operationId: listKycApplications
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Application list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/KycApplication"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/kyc/admin/applications/{id}:
+    get:
+      tags: [KYC]
+      summary: Get KYC application detail (admin)
+      operationId: getKycApplication
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Application detail with OCR and identity match data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  application:
+                    $ref: "#/components/schemas/KycApplication"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/kyc/admin/applications/{id}/approve:
+    post:
+      tags: [KYC]
+      summary: Approve KYC application
+      operationId: approveKyc
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remarks:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Application approved
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/kyc/admin/applications/{id}/reject:
+    post:
+      tags: [KYC]
+      summary: Reject KYC application
+      operationId: rejectKyc
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [remarks]
+              properties:
+                remarks:
+                  type: string
+                  minLength: 10
+                  maxLength: 500
+      responses:
+        "200":
+          description: Application rejected
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/banking/demo-accounts:
+    get:
+      tags: [Banking]
+      summary: List demo bank account for the authenticated user
+      description: |
+        Returns the demo bank account(s) that belong to the signed-in retail investor only.
+
+        Matching order: linked `appUserId` first, then bank account `email`, `phone`, or `holderName`
+        from the JWT user profile.
+
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor (e.g. user@finboard.local, anurag@finboard.local)
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: getDemoBankAccounts
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Demo account(s) for the authenticated user only
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/account:
+    get:
+      tags: [Banking]
+      summary: Get linked bank account and balance
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: getBankAccount
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Account details
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/accounts:
+    get:
+      tags: [Banking]
+      summary: List linked bank accounts
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: getLinkedAccounts
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Linked accounts
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/balance:
+    get:
+      tags: [Banking]
+      summary: Get linked bank account balance
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: getBankBalance
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Account balance and summary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/accounts/{id}:
+    delete:
+      tags: [Banking]
+      summary: Remove a linked bank account
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: removeLinkedBankAccount
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Account unlinked
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/banking/verify-bank:
+    post:
+      tags: [Banking]
+      summary: Verify bank account (Rs. 2 debit simulation)
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: verifyBank
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyBankRequest"
+      responses:
+        "200":
+          description: Verification initiated or completed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/beneficiary:
+    post:
+      tags: [Banking]
+      summary: Add transfer beneficiary
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: createBeneficiary
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeneficiaryRequest"
+      responses:
+        "201":
+          description: Beneficiary added
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/transfer:
+    post:
+      tags: [Banking]
+      summary: Transfer funds
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: transferFunds
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferRequest"
+      responses:
+        "200":
+          description: Transfer completed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/transactions:
+    get:
+      tags: [Banking]
+      summary: Transaction history
+      description: |
+        Returns transaction history for the authenticated user's linked bank account only.
+
+        Includes debits sent from the account, credits received into the account, and
+        user-scoped records such as bank verification debits/refunds.
+
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: getTransactions
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Transaction list
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/notifications:
+    get:
+      tags: [Banking]
+      summary: List banking notifications
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: getBankingNotifications
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Banking notification list
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/notifications/{id}:
+    delete:
+      tags: [Banking]
+      summary: Delete a banking notification
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: deleteBankingNotification
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Notification deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/banking/lookup/{accountNumber}:
+    get:
+      tags: [Banking]
+      summary: Lookup bank account by number
+      description: |
+        **Required JWT role(s):** `user`
+
+        **Allowed personas:** Retail investor only
+
+        **Denied:** `admin`, `rta_admin`, `amc_admin` → 403
+      operationId: lookupBankAccount
+      x-required-roles: [user]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: accountNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{12}$"
+      responses:
+        "200":
+          description: Account found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/banking/admin/users:
+    get:
+      tags: [Banking]
+      summary: List banking users (admin)
+      description: |
+        **Required JWT role(s):** `admin`
+
+        **Allowed personas:** KYC Review Admin (admin@finboard.local), Operations Admin (ops.admin@finboard.local)
+
+        **Denied:** `user`, `rta_admin`, `amc_admin` → 403
+      operationId: getBankingAdminUsers
+      x-required-roles: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User list with account status
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/admin/transactions:
+    get:
+      tags: [Banking]
+      summary: All transactions (admin)
+      description: |
+        **Required JWT role(s):** `admin`
+
+        **Allowed personas:** KYC Review Admin, Operations Admin
+
+        **Denied:** `user`, `rta_admin`, `amc_admin` → 403
+      operationId: getBankingAdminTransactions
+      x-required-roles: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Transaction list
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/admin/users/{id}/freeze:
+    patch:
+      tags: [Banking]
+      summary: Freeze or unfreeze user account
+      description: |
+        **Required JWT role(s):** `admin`
+
+        **Allowed personas:** KYC Review Admin, Operations Admin
+
+        **Denied:** `user`, `rta_admin`, `amc_admin` → 403
+      operationId: freezeBankAccount
+      x-required-roles: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [frozen]
+              properties:
+                frozen:
+                  type: boolean
+      responses:
+        "200":
+          description: Account status updated
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/banking/admin/users/{id}/reset-balance:
+    patch:
+      tags: [Banking]
+      summary: Reset user balance (admin demo)
+      description: |
+        **Required JWT role(s):** `admin`
+
+        **Allowed personas:** KYC Review Admin, Operations Admin
+
+        **Denied:** `user`, `rta_admin`, `amc_admin` → 403
+      operationId: resetBankBalance
+      x-required-roles: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [balance]
+              properties:
+                balance:
+                  type: number
+                  minimum: 0
+      responses:
+        "200":
+          description: Balance reset
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/investments/portfolio:
+    get:
+      tags: [Investments]
+      summary: Get portfolio holdings
+      operationId: getPortfolio
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Holdings list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holdings:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Holding"
+
+  /api/investments/buy:
+    post:
+      tags: [Investments]
+      summary: Buy stock or mutual fund
+      description: Requires approved KYC and verified bank account.
+      operationId: buyInvestment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuyRequest"
+      responses:
+        "201":
+          description: Order placed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holding:
+                    $ref: "#/components/schemas/Holding"
+        "403":
+          description: KYC not approved
+
+  /api/investments/sip:
+    post:
+      tags: [Investments]
+      summary: Create SIP
+      operationId: createSip
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SipRequest"
+      responses:
+        "201":
+          description: SIP created
+
+  /api/investments/admin/overview:
+    get:
+      tags: [Investments]
+      summary: AMC / admin AUM overview
+      operationId: getInvestmentAdminOverview
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: AUM summary and holdings
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/investments/admin/orders/{id}/status:
+    patch:
+      tags: [Investments]
+      summary: Update order status (AMC admin)
+      operationId: updateOrderStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - successful
+                    - rejected
+                    - pending_amc_approval
+                    - sip_active
+                    - sip_paused
+                    - sip_stopped
+      responses:
+        "200":
+          description: Order updated
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      description: Returns up to 50 most recent notifications.
+      operationId: listNotifications
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Notification"
+
+  /api/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Unread notification count
+      operationId: getUnreadCount
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+
+  /api/notifications/{id}/read:
+    put:
+      tags: [Notifications]
+      summary: Mark notification as read
+      operationId: markNotificationRead
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Notification updated
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/notifications/{id}:
+    delete:
+      tags: [Notifications]
+      summary: Delete notification
+      operationId: deleteNotification
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Notification removed
+
+  /api/audit/{resourceType}/{resourceId}:
+    get:
+      tags: [Audit]
+      summary: Get audit trail for a resource
+      description: |
+        Returns append-only audit entries for a specific resource (e.g. `kyc` + KYC application `_id`).
+
+        **Required JWT role(s):** `admin`, `rta_admin`
+
+        **Denied:** `user`, `amc_admin` → 403
+
+        **Frontend:** View in app at `/admin/audit` or on the KYC review panel.
+      operationId: getAuditTrail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: resourceType
+          in: path
+          required: true
+          schema:
+            type: string
+            example: kyc
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditEntry"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  x-finboard-role-notes:
+    bankingCustomer:
+      roles: [user]
+      personas: [Retail investor]
+    bankingAdmin:
+      roles: [admin]
+      personas: [KYC Review Admin, Operations Admin]
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT from any successful login:
+        - Flow A: `POST /api/auth/verify-otp` (after signup)
+        - Flow B: `POST /api/auth/signin`
+        - Flow C: `POST /api/auth/phone-login`
+        - Flow D: `POST /api/auth/admin/signin`
+
+        In Scalar, click **Authorize** and enter: `Bearer <your-token>`
+
+  parameters:
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Insufficient role
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: api-gateway
+        routes:
+          type: array
+          items:
+            type: object
+            properties:
+              prefix:
+                type: string
+              target:
+                type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          example: "+919876543210"
+        role:
+          type: string
+          enum: [user, admin, rta_admin, amc_admin]
+        phoneVerified:
+          type: boolean
+        emailVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AuthResponse:
+      type: object
+      example:
+        token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        user:
+          id: 507f1f77bcf86cd799439011
+          name: Rahul Sharma
+          email: user@finboard.local
+          phone: "+919876543210"
+          role: user
+          phoneVerified: true
+          emailVerified: false
+      properties:
+        token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        user:
+          $ref: "#/components/schemas/User"
+
+    SignupPendingResponse:
+      type: object
+      required: [message, requiresPhoneVerification, registrationComplete, user]
+      properties:
+        message:
+          type: string
+          example: Account created. OTP sent to your phone for verification.
+        requiresPhoneVerification:
+          type: boolean
+          example: true
+        registrationComplete:
+          type: boolean
+          example: false
+        user:
+          $ref: "#/components/schemas/User"
+
+    VerifyOtpResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        registrationComplete:
+          type: boolean
+          description: true when signup is finished and JWT is issued
+        approved:
+          type: boolean
+        provider:
+          type: string
+        status:
+          type: string
+        token:
+          type: string
+          description: Present when registrationComplete is true
+        user:
+          $ref: "#/components/schemas/User"
+
+    SendOtpResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        provider:
+          type: string
+        sid:
+          type: string
+        status:
+          type: string
+        to:
+          type: string
+        channel:
+          type: string
+
+    ForgotPasswordResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        provider:
+          type: string
+
+    SignupRequest:
+      type: object
+      required: [name, email, phone, password]
+      example:
+        name: Test User
+        email: newuser@finboard.local
+        phone: "+919900007777"
+        password: User@12345
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+          example: Test User
+        email:
+          type: string
+          format: email
+          example: newuser@finboard.local
+        phone:
+          type: string
+          description: E.164 format, e.g. +919876543210
+          example: "+919900007777"
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          example: User@12345
+
+    SigninRequest:
+      type: object
+      required: [email, password]
+      example:
+        email: user@finboard.local
+        password: User@12345
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@finboard.local
+        password:
+          type: string
+          example: User@12345
+
+    AdminSigninRequest:
+      allOf:
+        - $ref: "#/components/schemas/SigninRequest"
+        - type: object
+          example:
+            email: admin@finboard.local
+            password: Admin@12345
+            adminRole: admin
+          properties:
+            adminRole:
+              type: string
+              enum: [admin, rta_admin, amc_admin]
+              example: admin
+
+    SendOtpRequest:
+      type: object
+      required: [phone]
+      example:
+        phone: "+919876543210"
+      properties:
+        phone:
+          type: string
+          description: E.164 format
+          example: "+919876543210"
+
+    VerifyOtpRequest:
+      type: object
+      required: [phone, otp]
+      example:
+        phone: "+919900007777"
+        otp: "123456"
+      properties:
+        phone:
+          type: string
+          description: E.164 format
+          example: "+919900007777"
+        otp:
+          type: string
+          pattern: "^\\d{4,8}$"
+          example: "123456"
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      example:
+        currentPassword: User@12345
+        newPassword: NewPass@12345
+      properties:
+        currentPassword:
+          type: string
+          example: User@12345
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 72
+          example: NewPass@12345
+
+    ResetPasswordRequest:
+      type: object
+      required: [email, otp, newPassword]
+      example:
+        email: user@finboard.local
+        otp: "123456"
+        newPassword: User@12345
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@finboard.local
+        otp:
+          type: string
+          example: "123456"
+        newPassword:
+          type: string
+          minLength: 8
+          example: User@12345
+
+    Profile:
+      type: object
+      properties:
+        userId:
+          type: string
+        fullName:
+          type: string
+        kycStatus:
+          type: string
+        pan:
+          type: string
+        mobileNumber:
+          type: string
+        emailAddress:
+          type: string
+        address:
+          type: object
+
+    ProfileUpdateRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        dateOfBirth:
+          type: string
+        pan:
+          type: string
+        mobileNumber:
+          type: string
+        emailAddress:
+          type: string
+        maritalStatus:
+          type: string
+          enum: ["", Single, Married, Other]
+        gender:
+          type: string
+        incomeRange:
+          type: string
+        occupation:
+          type: string
+        address:
+          type: object
+          properties:
+            line1:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            postalCode:
+              type: string
+            country:
+              type: string
+
+    KycApplication:
+      type: object
+      properties:
+        _id:
+          type: string
+        userId:
+          type: string
+        name:
+          type: string
+        panNumber:
+          type: string
+        aadhaarNumber:
+          type: string
+        status:
+          type: string
+          enum:
+            - draft
+            - pending_admin_review
+            - approved
+            - rejected
+            - failed
+        aiVerification:
+          $ref: "#/components/schemas/AiVerification"
+        adminRemarks:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    AiVerification:
+      type: object
+      properties:
+        overallScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+        recommendation:
+          type: string
+          enum: [approve, review, reject]
+        fields:
+          type: object
+          additionalProperties: true
+        alignments:
+          type: object
+          properties:
+            userInputVsIdentity:
+              type: integer
+            ocrVsIdentity:
+              type: integer
+            imagesVsIdentity:
+              type: integer
+              nullable: true
+        summary:
+          type: string
+        verificationSource:
+          type: string
+          example: mistral_vision
+        model:
+          type: string
+        verifiedAt:
+          type: string
+          format: date-time
+
+    VerifyBankRequest:
+      type: object
+      required: [accountNumber, ifsc, accountHolderName]
+      properties:
+        accountNumber:
+          type: string
+          pattern: "^\\d{12}$"
+        ifsc:
+          type: string
+          example: HDFC0001234
+        accountHolderName:
+          type: string
+
+    BeneficiaryRequest:
+      type: object
+      required: [accountNumber, ifsc]
+      properties:
+        accountNumber:
+          type: string
+        ifsc:
+          type: string
+
+    TransferRequest:
+      type: object
+      required: [accountNumber, ifsc, amount]
+      properties:
+        accountNumber:
+          type: string
+        ifsc:
+          type: string
+        amount:
+          type: number
+          exclusiveMinimum: 0
+        remarks:
+          type: string
+          maxLength: 120
+
+    BuyRequest:
+      type: object
+      required: [symbol, name, price, quantity]
+      properties:
+        symbol:
+          type: string
+          example: RELIANCE
+        name:
+          type: string
+        price:
+          type: number
+          exclusiveMinimum: 0
+        quantity:
+          type: number
+          exclusiveMinimum: 0
+        assetType:
+          type: string
+          enum: [stock, mutual_fund]
+          default: stock
+
+    SipRequest:
+      type: object
+      required: [symbol, name, nav, monthlyAmount, sipDate]
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        nav:
+          type: number
+          exclusiveMinimum: 0
+        monthlyAmount:
+          type: number
+          minimum: 100
+        sipDate:
+          type: integer
+          minimum: 1
+          maximum: 28
+
+    Holding:
+      type: object
+      properties:
+        _id:
+          type: string
+        symbol:
+          type: string
+        name:
+          type: string
+        assetType:
+          type: string
+        quantity:
+          type: number
+        purchasePrice:
+          type: number
+        orderStatus:
+          type: string
+
+    Notification:
+      type: object
+      properties:
+        _id:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditEntry:
+      type: object
+      properties:
+        action:
+          type: string
+        actorId:
+          type: string
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
