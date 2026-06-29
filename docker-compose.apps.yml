@@ -1,0 +1,240 @@
+x-app-env: &app-env
+  NODE_ENV: production
+  JWT_SECRET: ${JWT_SECRET:-dev-docker-jwt-secret-change-me-in-production}
+  JWT_EXPIRES_IN: 7d
+  BCRYPT_SALT_ROUNDS: "12"
+  INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dev-internal-key}
+  CLIENT_ORIGIN: http://localhost:3000,http://127.0.0.1:3000
+  MONGODB_URI: mongodb://root:rootpassword@mongodb:27017/finboard?authSource=admin
+  BANK_DATABASE_URL: postgresql://finboard:finboard_pass@postgres:5432/finboard_banking
+  KAFKA_BROKERS: kafka:29092
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_KEY: minioadmin
+  S3_BUCKET: finboard-kyc
+  S3_FORCE_PATH_STYLE: "true"
+  GATEWAY_URL: http://api-gateway:4000
+  AUTH_SERVICE_URL: http://auth-service:4001
+  PROFILE_SERVICE_URL: http://profile-service:4002
+  KYC_SERVICE_URL: http://kyc-service:4003
+  DOCUMENT_SERVICE_URL: http://ocr-service:4004
+  BANKING_SERVICE_URL: http://banking-service:4005
+  INVESTMENT_SERVICE_URL: http://investment-service:4006
+  NOTIFICATION_SERVICE_URL: http://notification-service:4007
+  AUDIT_SERVICE_URL: http://audit-service:4008
+  SERVICE_HOST: 0.0.0.0
+
+x-service-build: &service-build
+  context: .
+  dockerfile: infrastructure/docker/Dockerfile.service
+
+services:
+  minio-init:
+    image: minio/mc:latest
+    container_name: finboard-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set finboard http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing finboard/finboard-kyc &&
+      echo 'MinIO bucket ready'
+      "
+    networks:
+      - mf-network
+    restart: "no"
+
+  api-gateway:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/api-gateway"
+        SERVICE_DIR: services/api-gateway
+    container_name: finboard-api-gateway
+    environment:
+      <<: *app-env
+      PORT: 4000
+      SERVICE_NAME: api-gateway
+    ports:
+      - "4000:4000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - mf-network
+
+  auth-service:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/auth-service"
+        SERVICE_DIR: services/auth-service
+    container_name: finboard-auth-service
+    environment:
+      <<: *app-env
+      PORT: 4001
+      SERVICE_NAME: auth-service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - mf-network
+
+  profile-service:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/profile-service"
+        SERVICE_DIR: services/profile-service
+    container_name: finboard-profile-service
+    environment:
+      <<: *app-env
+      PORT: 4002
+      SERVICE_NAME: profile-service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - mf-network
+
+  kyc-service:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/kyc-service"
+        SERVICE_DIR: services/kyc-service
+    container_name: finboard-kyc-service
+    environment:
+      <<: *app-env
+      PORT: 4003
+      SERVICE_NAME: kyc-service
+    volumes:
+      - kyc_uploads:/app/infrastructure/storage/uploads
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      ocr-service:
+        condition: service_started
+    networks:
+      - mf-network
+
+  ocr-service:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/ocr-service"
+        SERVICE_DIR: services/ocr-service
+    container_name: finboard-ocr-service
+    environment:
+      <<: *app-env
+      PORT: 4004
+      SERVICE_NAME: ocr-service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - mf-network
+
+  banking-service:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/banking-service"
+        SERVICE_DIR: services/banking-service
+    container_name: finboard-banking-service
+    environment:
+      <<: *app-env
+      PORT: 4005
+      SERVICE_NAME: banking-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - mf-network
+
+  investment-service:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/investment-service"
+        SERVICE_DIR: services/investment-service
+    container_name: finboard-investment-service
+    environment:
+      <<: *app-env
+      PORT: 4006
+      SERVICE_NAME: investment-service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - mf-network
+
+  notification-service:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/notification-service"
+        SERVICE_DIR: services/notification-service
+    container_name: finboard-notification-service
+    environment:
+      <<: *app-env
+      PORT: 4007
+      SERVICE_NAME: notification-service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - mf-network
+
+  audit-service:
+    build:
+      <<: *service-build
+      args:
+        SERVICE_PKG: "@finboard/audit-service"
+        SERVICE_DIR: services/audit-service
+    container_name: finboard-audit-service
+    environment:
+      <<: *app-env
+      PORT: 4008
+      SERVICE_NAME: audit-service
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - mf-network
+
+  customer-web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+      args:
+        API_GATEWAY_URL: http://api-gateway:4000
+    container_name: finboard-customer-web
+    environment:
+      NODE_ENV: production
+      API_GATEWAY_URL: http://api-gateway:4000
+      NEXT_PUBLIC_API_URL: /api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api-gateway
+    networks:
+      - mf-network
+
+volumes:
+  kyc_uploads:

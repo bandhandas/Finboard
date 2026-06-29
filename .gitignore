@@ -1,0 +1,15 @@
+node_modules/
+.cache/
+dist/
+build/
+.next/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+.DS_Store
+.vite/
+serviceAccountKey.json
+infrastructure/storage/uploads/
+services/banking-service/generated/

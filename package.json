@@ -1,0 +1,58 @@
+{
+  "name": "finboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Finboard — KYC, banking, and investment platform",
+  "packageManager": "pnpm@10.12.4",
+  "scripts": {
+    "install:all": "pnpm install",
+    "dev": "pnpm dev:microservices",
+    "docs": "echo 'API docs: http://localhost:4000/docs (start gateway with pnpm dev)'",
+    "dev:web": "pnpm --filter @finboard/customer-web dev",
+    "dev:microservices": "concurrently -n gateway,auth,profile,kyc,doc,bank,invest,notify,audit,web -c blue,magenta,cyan,yellow,red,green,gray,redBright,cyan,white \"pnpm --filter @finboard/api-gateway dev\" \"pnpm --filter @finboard/auth-service dev\" \"pnpm --filter @finboard/profile-service dev\" \"pnpm --filter @finboard/kyc-service dev\" \"pnpm --filter @finboard/ocr-service dev\" \"pnpm --filter @finboard/banking-service dev\" \"pnpm --filter @finboard/investment-service dev\" \"pnpm --filter @finboard/notification-service dev\" \"pnpm --filter @finboard/audit-service dev\" \"pnpm --filter @finboard/customer-web dev\"",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:apps:up": "docker compose -f docker-compose.yml -f docker-compose.apps.yml up -d --build",
+    "infra:apps:down": "docker compose -f docker-compose.yml -f docker-compose.apps.yml down",
+    "infra:logs": "docker compose logs -f",
+    "scaffold:service": "node infrastructure/scripts/scaffold-service.mjs",
+    "seed:admin": "node --env-file .env services/auth-service/src/modules/auth/jobs/auth.seed.js",
+    "seed:identity": "node --env-file .env services/kyc-service/src/modules/kyc/jobs/identity.seed.js",
+    "seed:kyc": "pnpm seed:identity",
+    "seed:banking": "pnpm --filter @finboard/banking-service prisma:seed",
+    "prisma:migrate": "pnpm --filter @finboard/banking-service exec prisma migrate deploy",
+    "prisma:migrate:dev": "pnpm --filter @finboard/banking-service prisma:migrate",
+    "prisma:generate": "pnpm --filter @finboard/banking-service prisma:generate",
+    "prisma:studio": "pnpm --filter @finboard/banking-service prisma:studio",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm test:services && pnpm test:web",
+    "test:services": "pnpm --filter @finboard/auth-service test && pnpm --filter @finboard/profile-service test && pnpm --filter @finboard/ocr-service test && pnpm --filter @finboard/banking-service test && pnpm --filter @finboard/investment-service test && pnpm --filter @finboard/notification-service test && pnpm --filter @finboard/audit-service test && pnpm --filter @finboard/api-gateway test",
+    "test:web": "pnpm --filter @finboard/customer-web test",
+    "test:e2e": "node infrastructure/scripts/e2e-smoke.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.28.0",
+    "prettier": "^3.5.3",
+    "turbo": "^2.5.4"
+  },
+  "mongodbMemoryServer": {
+    "downloadDir": ".cache/mongodb-binaries",
+    "version": "7"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "mongodb-memory-server",
+      "prisma",
+      "protobufjs",
+      "sharp",
+      "tesseract.js"
+    ]
+  }
+}
