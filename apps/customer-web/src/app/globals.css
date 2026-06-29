@@ -1,0 +1,370 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "react-phone-number-input/style.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 24px;
+  --radius-3xl: 24px;
+  --radius-4xl: 32px;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-canvas-soft: var(--canvas-soft);
+  --color-ink: var(--ink);
+  --color-body: var(--body);
+  --color-positive: var(--positive);
+  --color-positive-deep: var(--positive-deep);
+  --color-warning: var(--warning);
+  --color-negative: var(--negative);
+  --font-heading: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+}
+
+:root {
+  --radius: 1.5rem;
+  --ink: #0e0f0c;
+  --ink-deep: #163300;
+  --body: #454745;
+  --mute: #868685;
+  --canvas: #ffffff;
+  --canvas-soft: #e8ebe6;
+  --primary-pale: #e2f6d5;
+  --primary-active: #cdffad;
+  --positive: #2ead4b;
+  --positive-deep: #054d28;
+  --warning: #ffd11a;
+  --negative: #d03238;
+  --background: #e8ebe6;
+  --foreground: #0e0f0c;
+  --card: #ffffff;
+  --card-foreground: #0e0f0c;
+  --popover: #ffffff;
+  --popover-foreground: #0e0f0c;
+  --primary: #9fe870;
+  --primary-foreground: #0e0f0c;
+  --secondary: #e8ebe6;
+  --secondary-foreground: #0e0f0c;
+  --muted: #e8ebe6;
+  --muted-foreground: #868685;
+  --accent: #e2f6d5;
+  --accent-foreground: #0e0f0c;
+  --destructive: #d03238;
+  --border: rgba(14, 15, 12, 0.12);
+  --input: rgba(14, 15, 12, 0.16);
+  --ring: #9fe870;
+  --chart-1: #9fe870;
+  --chart-2: #2ead4b;
+  --chart-3: #38c8ff;
+  --chart-4: #ffc091;
+  --chart-5: #0e0f0c;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0e0f0c;
+  --sidebar-primary: #9fe870;
+  --sidebar-primary-foreground: #0e0f0c;
+  --sidebar-accent: #e2f6d5;
+  --sidebar-accent-foreground: #0e0f0c;
+  --sidebar-border: rgba(14, 15, 12, 0.1);
+  --sidebar-ring: #9fe870;
+  --fb-primary: #9fe870;
+  --fb-primary-active: #cdffad;
+  --fb-primary-pale: #e2f6d5;
+  --fb-on-primary: #0e0f0c;
+  --fb-ink: #0e0f0c;
+  --fb-ink-deep: #163300;
+  --fb-body: #454745;
+  --fb-mute: #868685;
+  --fb-canvas-soft: #e8ebe6;
+  --fb-positive: #2ead4b;
+  --fb-positive-deep: #054d28;
+  --fb-accent-cyan: #38c8ff;
+  --font-body: var(--font-sans);
+  color-scheme: light;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply antialiased bg-background text-foreground;
+    font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "calt" 1;
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  h1,
+  h2,
+  h3 {
+    color: var(--ink);
+    font-family: var(--font-display), ui-sans-serif, sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  .text-up {
+    color: var(--positive);
+  }
+
+  .text-down {
+    color: var(--negative);
+  }
+
+  .display-md {
+    font-size: 2.5rem;
+    font-weight: 900;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  .display-sm {
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.03em;
+  }
+
+  .body-lg {
+    font-size: 1.25rem;
+    line-height: 1.5;
+    color: var(--body);
+  }
+
+  .finboard-card {
+    @apply rounded-3xl border-0 bg-card text-card-foreground shadow-none;
+  }
+
+  .finboard-card-sage {
+    @apply rounded-3xl border-0 bg-secondary text-foreground;
+  }
+
+  .finboard-card-green {
+    @apply rounded-3xl border-0 bg-accent text-foreground;
+  }
+
+  .finboard-card-dark {
+    @apply rounded-3xl border-0 bg-[var(--ink)] text-[var(--primary)];
+  }
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  .landing-theme {
+    overflow-x: clip;
+    --fb-primary: #9fe870;
+    --fb-primary-active: #cdffad;
+    --fb-primary-pale: #e2f6d5;
+    --fb-on-primary: #0e0f0c;
+    --fb-ink: #0e0f0c;
+    --fb-ink-deep: #163300;
+    --fb-body: #454745;
+    --fb-mute: #868685;
+    --fb-canvas-soft: #e8ebe6;
+    --fb-positive: #2ead4b;
+    --fb-positive-deep: #054d28;
+    --fb-negative: #d03238;
+    --fb-accent-cyan: #38c8ff;
+    --background: #e8ebe6;
+    --foreground: #0e0f0c;
+    --card: #ffffff;
+    --card-foreground: #0e0f0c;
+    --popover: #ffffff;
+    --popover-foreground: #0e0f0c;
+    --primary: #9fe870;
+    --primary-foreground: #0e0f0c;
+    --secondary: #e8ebe6;
+    --secondary-foreground: #0e0f0c;
+    --muted: #e8ebe6;
+    --muted-foreground: #868685;
+    --accent: #e2f6d5;
+    --accent-foreground: #0e0f0c;
+    --destructive: #d03238;
+    --border: rgba(14, 15, 12, 0.1);
+    --input: rgba(14, 15, 12, 0.12);
+    --ring: #9fe870;
+    --sidebar: var(--card);
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--accent);
+    --sidebar-accent-foreground: var(--accent-foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+    color-scheme: light;
+  }
+
+  .dark .landing-theme,
+  .landing-theme.dark {
+    --fb-primary: #9fe870;
+    --fb-primary-active: #a9f080;
+    --fb-primary-pale: #1a3a0a;
+    --fb-on-primary: #0e0f0c;
+    --fb-ink: #e8ebe6;
+    --fb-ink-deep: #cdffad;
+    --fb-body: #a0a39e;
+    --fb-mute: #686a67;
+    --fb-canvas-soft: #141513;
+    --fb-positive: #4ade80;
+    --fb-positive-deep: #86efac;
+    --fb-negative: #f87171;
+    --fb-accent-cyan: #22d3ee;
+    --background: #141513;
+    --foreground: #e8ebe6;
+    --card: #1e1f1c;
+    --card-foreground: #e8ebe6;
+    --popover: #1e1f1c;
+    --popover-foreground: #e8ebe6;
+    --primary: #9fe870;
+    --primary-foreground: #0e0f0c;
+    --secondary: #1e1f1c;
+    --secondary-foreground: #e8ebe6;
+    --muted: #1e1f1c;
+    --muted-foreground: #686a67;
+    --accent: #1a3a0a;
+    --accent-foreground: #9fe870;
+    --destructive: #f87171;
+    --border: rgba(232, 235, 230, 0.1);
+    --input: rgba(232, 235, 230, 0.12);
+    --ring: #9fe870;
+    --sidebar: var(--card);
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--accent);
+    --sidebar-accent-foreground: var(--accent-foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+    color-scheme: dark;
+  }
+
+  .landing-theme :where(a, button) {
+    scroll-margin-top: 5rem;
+  }
+
+  .landing-theme :where(main > section[id]) {
+    scroll-margin-top: 7.5rem;
+  }
+
+  .auth-theme .auth-form-card {
+    @apply rounded-3xl bg-secondary p-6 sm:p-8;
+  }
+
+  .auth-theme .auth-tabs-list {
+    @apply grid h-auto w-full grid-cols-2 rounded-3xl bg-background p-1;
+  }
+
+  .auth-theme .auth-tabs-trigger {
+    @apply rounded-[20px] border-0 px-4 py-2.5 text-sm font-semibold text-muted-foreground data-active:bg-card data-active:text-foreground data-active:shadow-none;
+  }
+
+  .auth-theme .auth-field-label {
+    @apply text-sm font-semibold text-foreground;
+  }
+
+  .auth-theme .auth-note {
+    @apply rounded-3xl border border-foreground/10 bg-accent p-4 text-sm text-foreground;
+  }
+}
+
+.dark {
+  --background: #0e0f0c;
+  --foreground: #e8ebe6;
+  --card: #1a1b18;
+  --card-foreground: #e8ebe6;
+  --popover: #1a1b18;
+  --popover-foreground: #e8ebe6;
+  --primary: #9fe870;
+  --primary-foreground: #0e0f0c;
+  --secondary: #2a2b28;
+  --secondary-foreground: #e8ebe6;
+  --muted: #2a2b28;
+  --muted-foreground: #868685;
+  --accent: #163300;
+  --accent-foreground: #9fe870;
+  --destructive: #d03238;
+  --border: rgba(232, 235, 230, 0.12);
+  --input: rgba(232, 235, 230, 0.16);
+  --ring: #9fe870;
+  --sidebar: #1a1b18;
+  --sidebar-foreground: #e8ebe6;
+  --sidebar-primary: #9fe870;
+  --sidebar-primary-foreground: #0e0f0c;
+  --sidebar-accent: #2a2b28;
+  --sidebar-accent-foreground: #e8ebe6;
+  --sidebar-border: rgba(232, 235, 230, 0.1);
+  --sidebar-ring: #9fe870;
+  --ink: #e8ebe6;
+  --ink-deep: #cdffad;
+  --body: #a0a39e;
+  --positive: #4ade80;
+  --positive-deep: #86efac;
+  --primary-pale: #1a3a0a;
+  --negative: #f87171;
+  --warning-content: #fef3c7;
+}
+
+.dark .auth-theme {
+  --fb-canvas-soft: #111210;
+  --fb-ink: #e8ebe6;
+  --fb-ink-deep: #cdffad;
+  --fb-body: #a0a39e;
+  --fb-mute: #686a67;
+  --fb-positive-deep: #86efac;
+}
+
+.PhoneInput {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+.PhoneInputInput {
+  flex: 1;
+  min-width: 0;
+}
